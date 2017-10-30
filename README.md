@@ -4,9 +4,10 @@ staleproxy is a simple proxy that serves stale content when available and does a
 
 ## USAGE
 
-set env vars:
+Set these env vars and run the binary.
 
-PROXY_BASE_URL: <URL_TO_PROXY_TO_WITH_TRAILING_SLASH>
-REWRITE_FROM: <URL_TO_REWRITE_FROM>
-REWRITE_TO: <URL_TO_REWRITE_TO>
-
+| Environment Var   |      Description      |  Sample                |
+|-------------------|:----------------------|-----------------------:|
+| PROXY_BASE_URL    | The URL to proxy to   | http://google.com/     |
+| REWRITE_FROM      |    Rewrite this...    | http://google.com/     |
+| REWRITE_TO        | ... to this           | http://localhost:8080/ |
