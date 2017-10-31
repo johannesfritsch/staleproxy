@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -25,10 +27,29 @@ func replaceBaseURL(content []byte) []byte {
 	return []byte(re.ReplaceAllString(string(content), os.Getenv("REWRITE_TO")))
 }
 
-func updateCache(method string, path string, donechan chan<- CacheEntry, errchan chan<- error) {
-	log.Printf("Updating cache: %v\n", path)
+func getCacheKey(method string, path string, query string) *string {
+	var key *string
+	if method == "GET" {
+		newkey := fmt.Sprintf("%v#%v#%v", method, path, query)
+		key = &newkey
+	} else {
+		key = nil
+	}
+	return key
+}
+
+func getRequestPath(path string, query string) string {
+	if query == "" {
+		return os.Getenv("PROXY_BASE_URL") + path
+	} else {
+		return os.Getenv("PROXY_BASE_URL") + path + "?" + query
+	}
+}
+
+func updateCache(method string, path string, query string, body io.Reader, donechan chan<- CacheEntry, errchan chan<- error) {
 	client := &http.Client{}
-	req, err := http.NewRequest(method, os.Getenv("PROXY_BASE_URL")+path, nil)
+
+	req, err := http.NewRequest(method, getRequestPath(path, query), body)
 	if err != nil {
 		errchan <- err
 		return
@@ -49,8 +70,6 @@ func updateCache(method string, path string, donechan chan<- CacheEntry, errchan
 
 	respBytes = replaceBaseURL(respBytes)
 
-	log.Printf("Updated cache: %v\n", path)
-
 	headerMap := make(map[string][]string)
 	for key, val := range resp.Header {
 		headerMap[key] = val
@@ -63,7 +82,10 @@ func updateCache(method string, path string, donechan chan<- CacheEntry, errchan
 		Headers:   headerMap,
 	}
 
-	cache[path] = cacheentry
+	if cachekey := getCacheKey(method, path, query); cachekey != nil {
+		log.Printf("lookup cache key for update: %v\n", *cachekey)
+		cache[*cachekey] = cacheentry
+	}
 
 	donechan <- cacheentry
 }
@@ -88,14 +110,17 @@ func main() {
 		done := make(chan CacheEntry)
 		err := make(chan error)
 
-		if cacheentry, ok := cache[r.URL.Path]; ok {
-			go updateCache(r.Method, r.URL.Path, done, err)
-			serveCacheEntry(w, cacheentry)
-			log.Printf("Served old content from cache: %v\n", r.URL.Path)
-			return
+		if cachekey := getCacheKey(r.Method, r.URL.Path, r.URL.RawQuery); cachekey != nil {
+			log.Printf("Lookup cache key: %v\n", *cachekey)
+			if cacheentry, ok := cache[*cachekey]; ok {
+				go updateCache(r.Method, r.URL.Path, r.URL.RawQuery, r.Body, done, err)
+				serveCacheEntry(w, cacheentry)
+				log.Printf("Served old content from cache: %v\n", r.URL.Path)
+				return
+			}
 		}
 
-		go updateCache(r.Method, r.URL.Path, done, err)
+		go updateCache(r.Method, r.URL.Path, r.URL.RawQuery, r.Body, done, err)
 		select {
 		case cacheentry := <-done:
 			serveCacheEntry(w, cacheentry)
