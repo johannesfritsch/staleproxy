@@ -56,12 +56,16 @@ func updateCache(method string, path string, donechan chan<- CacheEntry, errchan
 		headerMap[key] = val
 	}
 
-	donechan <- CacheEntry{
+	cacheentry := CacheEntry{
 		Status:    resp.StatusCode,
 		Body:      respBytes,
 		Requested: time.Now(),
 		Headers:   headerMap,
 	}
+
+	cache[path] = cacheentry
+
+	donechan <- cacheentry
 }
 
 func serveCacheEntry(w http.ResponseWriter, cacheentry CacheEntry) {
@@ -94,7 +98,6 @@ func main() {
 		go updateCache(r.Method, r.URL.Path, done, err)
 		select {
 		case cacheentry := <-done:
-			cache[r.URL.Path] = cacheentry
 			serveCacheEntry(w, cacheentry)
 			log.Printf("Served fresh content from cache: %v\n", r.URL.Path)
 			return
